@@ -1,6 +1,6 @@
 open Core
 
-type symbol_registry = (int64, Value.t) Hashtbl.t
+type symbol_registry = Symbol.registry
 
 type frame = {
   return_pc : int;
@@ -124,6 +124,7 @@ module type S = sig
   val get_status : t -> string
   val heap : t -> heap_t
   val symbols : t -> symbol_registry
+  val set_sym : t -> int -> Value.t -> unit
 end
 
 module Make (H : Heap.S) (T : TRACER) :
@@ -184,7 +185,7 @@ module Make (H : Heap.S) (T : TRACER) :
       pc = 0;
       status = Running;
       tracer_ctx;
-      symbols = Hashtbl.create 64;
+      symbols = Symbol.create ();
       current_continuation = None;
       live_continuations = [];
     }
@@ -291,7 +292,8 @@ module Make (H : Heap.S) (T : TRACER) :
 
   let do_dcall vm ~fn_reg ~arg_start ~arg_end ~ret_dst =
     let base = current_base vm in
-    let args = Array.sub vm.regs (base + arg_start) (arg_end - arg_start + 1) in
+    let len = if arg_end >= arg_start then arg_end - arg_start + 1 else 0 in
+    let args = Array.sub vm.regs (base + arg_start) len in
     match resolve_callable vm fn_reg with
     | Value.NativeFun fn -> (
         match fn args with
@@ -309,7 +311,8 @@ module Make (H : Heap.S) (T : TRACER) :
 
   let do_tdcall vm ~fn_reg ~arg_start ~arg_end =
     let base = current_base vm in
-    let args = Array.sub vm.regs (base + arg_start) (arg_end - arg_start + 1) in
+    let len = if arg_end >= arg_start then arg_end - arg_start + 1 else 0 in
+    let args = Array.sub vm.regs (base + arg_start) len in
     match resolve_callable vm fn_reg with
     | Value.NativeFun fn -> (
         match fn args with
@@ -319,9 +322,7 @@ module Make (H : Heap.S) (T : TRACER) :
     | Value.Ptr addr -> (
         let code_ptr = H.read vm.heap addr 0 in
         match Value.get_native Value.bytecode_id code_ptr with
-        | Some code ->
-            do_tcall vm ~target:0 ~arg_start ~prog:code;
-            ignore arg_end
+        | Some code -> do_tcall vm ~target:0 ~arg_start ~prog:code
         | None -> fault vm "TailDynCall: closure has invalid code pointer")
     | _ -> fault vm "TailDynCall: expected NativeFun or closure"
 
@@ -384,7 +385,7 @@ module Make (H : Heap.S) (T : TRACER) :
               end
           | 0x08 -> (
               let id = rd_i64 prog pc4 in
-              match Hashtbl.find_opt vm.symbols id with
+              match Symbol.resolve vm.symbols id with
               | Some v ->
                   vm.regs.(base + a) <- v;
                   T.on_reg_write vm.tracer_ctx ~reg:(base + a) ~value:v;
@@ -901,6 +902,10 @@ module Make (H : Heap.S) (T : TRACER) :
               | _ -> fault vm "ConStatus: expected continuation")
           | op -> fault vm (Format.asprintf "unknown opcode 0x%02X" op)
         end
+
+  let set_sym vm id v =
+    let symbol_id = Int64.of_int id in
+    Hashtbl.replace vm.symbols.Symbol.by_id symbol_id (Symbol.Resolved v)
 
   let run vm =
     while vm.status = Running do

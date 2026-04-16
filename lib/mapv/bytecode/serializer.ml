@@ -104,7 +104,52 @@ module Write = struct
              (Exception.Invalid_registry
                 "serializer: attempted to serialize non-serializable value"))
 
-  let instr buf i =
+  let instr_size = function
+    | Instr.Nop | Instr.Halt -> 4
+    | Instr.Mov _ -> 4
+    | Instr.Load _ -> 8
+    | Instr.LoadF _ -> 12
+    | Instr.LoadB _ -> 4
+    | Instr.LoadNil _ -> 4
+    | Instr.LoadK _ -> 8
+    | Instr.LoadS _ -> 12
+    | Instr.Add _ | Instr.Sub _ | Instr.Mul _ | Instr.Div _ | Instr.Mod _ -> 4
+    | Instr.AddI _ | Instr.SubI _ | Instr.MulI _ -> 8
+    | Instr.AddF _ | Instr.SubF _ | Instr.MulF _ | Instr.DivF _ -> 4
+    | Instr.And _ | Instr.Or _ | Instr.Xor _ -> 4
+    | Instr.Shl _ | Instr.Shr _ | Instr.ShrU _ -> 4
+    | Instr.ShlI _ | Instr.ShrI _ | Instr.ShrUI _ -> 8
+    | Instr.Eq _ | Instr.Ne _ | Instr.Lt _ | Instr.LtU _ | Instr.Lte _
+    | Instr.LteU _ | Instr.EqF _ | Instr.NeF _ | Instr.LtF _ | Instr.LteF _ ->
+        4
+    | Instr.I2F _ | Instr.F2I _ | Instr.TypeOf _ -> 4
+    | Instr.Alloc _ -> 12
+    | Instr.GetField _ -> 8
+    | Instr.SetField _ -> 8
+    | Instr.GetTag _ | Instr.Len _ -> 4
+    | Instr.Jmp _ -> 8
+    | Instr.Jz _ | Instr.Jnz _ -> 8
+    | Instr.Call _ -> 12
+    | Instr.TailCall _ -> 12
+    | Instr.DynCall _ -> 8
+    | Instr.TailDynCall _ -> 4
+    | Instr.Ret _ -> 4
+    | Instr.Try _ -> 8
+    | Instr.Throw _ -> 4
+    | Instr.EndTry -> 4
+    | Instr.ConNew _ | Instr.ConYield _ -> 4
+    | Instr.ConResume _ | Instr.ConStatus _ -> 4
+
+  let compute_byte_offsets code =
+    let offsets = Array.make (Array.length code) 0 in
+    let pos = ref 0 in
+    for i = 0 to Array.length code - 1 do
+      offsets.(i) <- !pos;
+      pos := !pos + instr_size code.(i)
+    done;
+    offsets
+
+  let instr buf (offsets : int array) i =
     let header op a b c =
       u8 buf op;
       u8 buf a;
@@ -123,9 +168,9 @@ module Write = struct
         f64 buf f
     | Instr.LoadB (d, b) -> header 0x05 d (if b then 1 else 0) 0
     | Instr.LoadNil d -> header 0x06 d 0 0
-    | Instr.LoadK (d, i) ->
+    | Instr.LoadK (d, idx) ->
         header 0x07 d 0 0;
-        i32 buf i
+        i32 buf idx
     | Instr.LoadS (d, id) ->
         header 0x08 d 0 0;
         i64v buf id
@@ -187,21 +232,21 @@ module Write = struct
         i32 buf f
     | Instr.GetTag (d, o) -> header 0x53 d o 0
     | Instr.Len (d, o) -> header 0x54 d o 0
-    | Instr.Jmp t ->
+    | Instr.Jmp target ->
         header 0x60 0 0 0;
-        i32 buf t
-    | Instr.Jz (r, t) ->
+        i32 buf offsets.(target)
+    | Instr.Jz (r, target) ->
         header 0x61 r 0 0;
-        i32 buf t
-    | Instr.Jnz (r, t) ->
+        i32 buf offsets.(target)
+    | Instr.Jnz (r, target) ->
         header 0x62 r 0 0;
-        i32 buf t
-    | Instr.Call (t, s, e, r) ->
+        i32 buf offsets.(target)
+    | Instr.Call (target, s, e, r) ->
         header 0x70 s e r;
-        i32 buf t
-    | Instr.TailCall (t, s, e) ->
+        i32 buf offsets.(target)
+    | Instr.TailCall (target, s, e) ->
         header 0x71 s e 0;
-        i32 buf t
+        i32 buf offsets.(target)
     | Instr.DynCall (f, s, e, r) ->
         header 0x72 f s e;
         u8 buf r;
@@ -210,9 +255,9 @@ module Write = struct
         u8 buf 0
     | Instr.TailDynCall (f, s, e) -> header 0x73 f s e
     | Instr.Ret r -> header 0x74 r 0 0
-    | Instr.Try (h, c) ->
+    | Instr.Try (handler, c) ->
         header 0x80 c 0 0;
-        i32 buf h
+        i32 buf offsets.(handler)
     | Instr.Throw r -> header 0x81 r 0 0
     | Instr.EndTry -> header 0x82 0 0 0
     | Instr.ConNew (d, s) -> header 0x90 d s 0
@@ -222,10 +267,14 @@ module Write = struct
 
   let func buf (f : func) =
     string buf f.name;
+    let offsets = compute_byte_offsets f.code in
     u8 buf f.arity;
     align buf 4;
-    u32 buf (Array.length f.code);
-    Array.iter (instr buf) f.code
+    let n = Array.length f.code in
+    u32 buf n;
+    for i = 0 to n - 1 do
+      instr buf offsets f.code.(i)
+    done
 
   let import buf i =
     i64v buf i.symbol_id;

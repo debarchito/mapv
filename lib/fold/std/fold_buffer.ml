@@ -10,6 +10,9 @@ module Make (H : Mapv.Heap.S) = struct
     let addr = H.alloc heap ~size:(2 + slots) ~tag:Core.Tag.buffer in
     H.write heap addr 0 (Value.Int capacity);
     H.write heap addr 1 (Value.Int 0);
+    for i = 0 to slots - 1 do
+      H.write heap addr (2 + i) (Value.Int 0)
+    done;
     addr
 
   let capacity heap addr =
@@ -136,58 +139,34 @@ module Make (H : Mapv.Heap.S) = struct
   module NS = Mapv.Namespace.Make (H)
 
   let register heap (reg : Mapv.Symbol.registry) =
-    let ns_name = "std/buffer" in
-
-    let fail kind name msg =
-      let full_name = Printf.sprintf "%s/%s" ns_name name in
-      raise (Exception.Signal (kind (Printf.sprintf "%s: %s" full_name msg)))
-    in
-
-    let def name arity body =
-      nif name (fun args ->
-          let actual = Array.length args in
-          if actual <> arity then
-            fail
-              (fun s -> Exception.Arity_error s)
-              name
-              (Printf.sprintf "expected %d arguments but got %d" arity actual);
-          body args)
-    in
-
-    let type_err name expected =
-      fail
-        (fun s -> Exception.Type_error s)
-        name
-        (Printf.sprintf "expected %s" expected)
-    in
-
+    let nif_checked, _, type_err = NS.ns_builder () in
     NS.register heap reg
-      (ns ns_name
+      (ns "std/buffer"
          [
-           def "make" 1 (function
+           nif_checked "make" 1 (function
              | [| Value.Int cap |] -> Value.Ptr (alloc heap cap)
              | _ -> type_err "make" "Int");
-           def "capacity" 1 (function
+           nif_checked "capacity" 1 (function
              | [| Value.Ptr addr |] -> Value.Int (capacity heap addr)
              | _ -> type_err "capacity" "Ptr");
-           def "length" 1 (function
+           nif_checked "length" 1 (function
              | [| Value.Ptr addr |] -> Value.Int (length heap addr)
              | _ -> type_err "length" "Ptr");
-           def "set_length" 2 (function
+           nif_checked "set_length" 2 (function
              | [| Value.Ptr addr; Value.Int n |] ->
                  set_length heap addr n;
                  Value.Nil
              | _ -> type_err "set_length" "Ptr, Int");
-           def "read_byte" 2 (function
+           nif_checked "read_byte" 2 (function
              | [| Value.Ptr addr; Value.Int i |] ->
                  Value.Int (read_byte heap addr i)
              | _ -> type_err "read_byte" "Ptr, Int");
-           def "write_byte" 3 (function
+           nif_checked "write_byte" 3 (function
              | [| Value.Ptr addr; Value.Int i; Value.Int byte |] ->
                  write_byte heap addr i byte;
                  Value.Nil
              | _ -> type_err "write_byte" "Ptr, Int, Int");
-           def "copy" 5 (function
+           nif_checked "copy" 5 (function
              | [|
                  Value.Ptr s;
                  Value.Int so;
@@ -198,14 +177,14 @@ module Make (H : Mapv.Heap.S) = struct
                  copy heap s so d doff l;
                  Value.Nil
              | _ -> type_err "copy" "Ptr, Int, Ptr, Int, Int");
-           def "fill" 4 (function
+           nif_checked "fill" 4 (function
              | [|
                  Value.Ptr addr; Value.Int offset; Value.Int len; Value.Int byte;
                |] ->
                  fill heap addr offset len byte;
                  Value.Nil
              | _ -> type_err "fill" "Ptr, Int, Int, Int");
-           def "compare" 5 (function
+           nif_checked "compare" 5 (function
              | [|
                  Value.Ptr a;
                  Value.Int ao;

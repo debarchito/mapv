@@ -38,6 +38,30 @@ module Make (H : Heap.S) = struct
         H.write heap addr 1 Value.Nil;
         Value.Ptr addr
 
+  let nif_checked name arity body =
+    nif name (fun args ->
+        let actual = Array.length args in
+        if actual <> arity then
+          raise
+            (Exception.Signal
+               (Exception.Arity_error
+                  (Printf.sprintf "%s: expected %d arguments but got %d" name
+                     arity actual)));
+        body args)
+
+  let nif_ name body = nif name body
+
+  let ns_builder () =
+    let def name arity body = nif_checked name arity body in
+    let def_ name body = nif_ name body in
+    let type_err name expected =
+      raise
+        (Exception.Signal
+           (Exception.Type_error
+              (Printf.sprintf "%s: expected %s" name expected)))
+    in
+    (def, def_, type_err)
+
   let register heap (reg : Symbol.registry) root =
     let rec walk path = function
       | Leaf (name, fn) ->

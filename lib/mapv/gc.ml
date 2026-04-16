@@ -73,7 +73,8 @@ module Make (H : Heap.S) = struct
     H.reset_young h;
     H.on_gc h (Heap.Minor_end { promoted });
     let s = H.stats h in
-    if s.old_used >= cfg.major_threshold then Some Major else None
+    let threshold = int_of_float (float_of_int s.old_total *. 0.5) in
+    if s.old_used >= threshold then Some Major else None
 
   let mark h ~roots =
     let steps = ref 0 in
@@ -113,11 +114,7 @@ module Make (H : Heap.S) = struct
     H.on_gc h (Heap.Major_mark { steps = mark_steps });
     let sweep_steps, freed = sweep h in
     H.on_gc h (Heap.Major_sweep { steps = sweep_steps; freed });
-    H.on_gc h Heap.Major_end;
-    let s = H.stats h in
-    cfg.major_threshold <-
-      max Config.Gc.default.major_threshold
-        (int_of_float (float_of_int s.old_used *. cfg.major_growth_factor))
+    H.on_gc h Heap.Major_end
 
   let run h (cfg : Config.Gc.t) ~roots = function
     | Minor -> minor h cfg ~roots

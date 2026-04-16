@@ -1,6 +1,6 @@
 (executable
  (name main)
- (public_name fold)
+ (public_name monte_carlo)
  (package fold)
  (libraries mapv fold)
  (modules main))

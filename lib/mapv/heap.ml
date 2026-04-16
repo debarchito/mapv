@@ -491,15 +491,10 @@ module Make (H : TRACER) : S with type tracer_ctx = H.ctx = struct
   let needs_minor_gc t = t.alloc_count >= t.young_limit
 
   let reset_young t =
-    for i = 0 to t.n_chunks - 1 do
-      let c = t.chunks.(i) in
-      if c.gen = Young then begin
-        c.top <- 0;
-        Array.fill c.data 0 c.size Value.Nil
-      end
-    done;
-    t.alloc_count <- 0;
-    t.young <- 0
+    let c = t.chunks.(t.young) in
+    c.top <- 0;
+    Array.fill c.data 0 c.size Value.Nil;
+    t.alloc_count <- 0
 
   let chunk_size t = t.chunk_size
 
@@ -570,5 +565,9 @@ module Make (H : TRACER) : S with type tracer_ctx = H.ctx = struct
 
   let tracer t = t.tracer_ctx
   let on_gc t ev = H.on_gc t.tracer_ctx ev
-  let on_promote t a = H.on_promote t.tracer_ctx ~addr:a
+
+  let on_promote t a =
+    let size = get_size t a in
+    t.old_live_words <- t.old_live_words + size;
+    H.on_promote t.tracer_ctx ~addr:a
 end

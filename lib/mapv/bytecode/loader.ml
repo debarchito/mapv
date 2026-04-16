@@ -6,7 +6,8 @@ let load_error fmt = Format.kasprintf (fun s -> raise (Load_error s)) fmt
 
 let encode_func (f : Serializer.func) : bytes =
   let buf = Buffer.create 64 in
-  Array.iter (Serializer.Write.instr buf) f.code;
+  let offsets = Serializer.Write.compute_byte_offsets f.code in
+  Array.iter (fun i -> Serializer.Write.instr buf offsets i) f.code;
   Buffer.to_bytes buf
 
 let link (funcs : Serializer.func array) : bytes * int array =
