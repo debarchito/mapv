@@ -48,3 +48,8 @@ let pp reg =
       | Resolved v -> Printf.printf "  0x%Lx  %s\n" id (Value.to_string v)
       | Unresolved name -> Printf.printf "  0x%Lx  [unresolved: %s]\n" id name)
     reg.by_id
+
+let sym reg name =
+  match resolve reg (hash name) with
+  | Some v -> v
+  | None -> failwith ("Could not resolve symbol: " ^ name)

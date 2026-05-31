@@ -145,32 +145,6 @@ module Make (H : Mapv.Heap.S) = struct
              | [| Value.Float f |] -> Value.Int (Stdlib.truncate f)
              | [| Value.Int n |] -> Value.Int n
              | _ -> type_err "trunc" "Int|Float");
-           nif_checked "add" 2 (function
-             | [| Value.Float a; Value.Float b |] -> Value.Float (a +. b)
-             | [| Value.Int a; Value.Int b |] -> Value.Int (a + b)
-             | [| Value.Float a; Value.Int b |] -> Value.Float (a +. fof b)
-             | [| Value.Int a; Value.Float b |] -> Value.Float (fof a +. b)
-             | _ -> type_err "add" "Int|Float, Int|Float");
-           nif_checked "sub" 2 (function
-             | [| Value.Float a; Value.Float b |] -> Value.Float (a -. b)
-             | [| Value.Int a; Value.Int b |] -> Value.Int (a - b)
-             | [| Value.Float a; Value.Int b |] -> Value.Float (a -. fof b)
-             | [| Value.Int a; Value.Float b |] -> Value.Float (fof a -. b)
-             | _ -> type_err "sub" "Int|Float, Int|Float");
-           nif_checked "mul" 2 (function
-             | [| Value.Float a; Value.Float b |] -> Value.Float (a *. b)
-             | [| Value.Int a; Value.Int b |] -> Value.Int (a * b)
-             | [| Value.Float a; Value.Int b |] -> Value.Float (a *. fof b)
-             | [| Value.Int a; Value.Float b |] -> Value.Float (fof a *. b)
-             | _ -> type_err "mul" "Int|Float, Int|Float");
-           nif_checked "div" 2 (function
-             | [| Value.Float a; Value.Float b |] -> Value.Float (a /. b)
-             | [| Value.Int a; Value.Int b |] ->
-                 if b = 0 then type_err "div" "division by zero"
-                 else Value.Float (fof a /. fof b)
-             | [| Value.Float a; Value.Int b |] -> Value.Float (a /. fof b)
-             | [| Value.Int a; Value.Float b |] -> Value.Float (fof a /. b)
-             | _ -> type_err "div" "Int|Float, Int|Float");
            nif_checked "neg" 1 (function
              | [| Value.Float f |] -> Value.Float ~-.f
              | [| Value.Int n |] -> Value.Int ~-n
