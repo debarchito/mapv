@@ -94,6 +94,7 @@
 
           devShells.default = pkgs.mkShell {
             name = "mapv-dev";
+
             inputsFrom = [ scope.fold ];
             nativeBuildInputs = devPackages;
           };
