@@ -7,7 +7,7 @@
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
     };
     opam-nix = {
-      url = "github:tweag/opam-nix";
+      url = "github:debarchito/opam-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     opam-repository = {
@@ -41,26 +41,28 @@
 
       perSystem =
         {
-          pkgs,
-          system,
           self',
+          system,
+          pkgs,
+          lib,
           ...
         }:
         let
           on = opam-nix.lib.${system};
 
           basePackagesQuery = {
-            ocaml-base-compiler = "*";
+            ocaml-variants = "5.5.0+options,ocaml-option-flambda";
+            ocaml-config = "*";
+            mapv = "*";
             fold = "*";
           };
 
           devPackagesQuery = {
-            mapv = "*";
             ocamlformat = "*";
             ocaml-lsp-server = "*";
           };
 
-          scope = on.buildOpamProject' { repos = [ opam-repository ]; } ./. (
+          scope = on.buildOpamProject' { repos = [ opam-repository ]; } (lib.cleanSource ./.) (
             basePackagesQuery // devPackagesQuery
           );
 
