@@ -9,7 +9,8 @@
 > from `Bytes` to `Bigarray` to back the memory primitives. This mean re-writing
 > the entire memory management sections. It's important since `Bytes` is managed
 > by the OCaml heap whereas `Bigarray` lives on the C heap; this reduce the
-> friction between the Mapv GC and OCaml GC.
+> friction between the Mapv GC and OCaml GC. The canonical source is ref `v2` at
+> [https://git.sr.ht/~debarchito/mapv/tree/v2](https://git.sr.ht/~debarchito/mapv/tree/v2).
 
 ## 1. Development
 
