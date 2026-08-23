@@ -41,7 +41,6 @@
 
       perSystem =
         {
-          self',
           system,
           pkgs,
           lib,
@@ -54,7 +53,6 @@
             ocaml-variants = "5.5.0+options,ocaml-option-flambda";
             ocaml-config = "*";
             mapv = "*";
-            fold = "*";
           };
 
           devPackagesQuery = {
@@ -82,20 +80,19 @@
             };
           };
 
-          packages = {
-            inherit (scope) mapv fold;
-            fmt = self'.formatter;
+          packages = rec {
+            inherit (scope) mapv;
+            default = mapv;
           };
 
           overlayAttrs = {
             ocamlPackages.mapv = scope.mapv;
-            inherit (scope) fold;
           };
 
           devShells.default = pkgs.mkShell {
             name = "mapv-dev";
 
-            inputsFrom = [ scope.fold ];
+            inputsFrom = [ scope.mapv ];
             nativeBuildInputs = devPackages;
           };
         };

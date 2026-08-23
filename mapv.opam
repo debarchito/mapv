@@ -4,12 +4,13 @@ description: "An embedable and visualizable VM for OCaml"
 maintainer: ["Debarchito Nath <debarchiton@proton.me>"]
 authors: ["Debarchito Nath <debarchiton@proton.me>"]
 license: "LGPL-3.0-only"
-homepage: "https://codeberg.org/debarchito/map"
-bug-reports: "https://codeberg.org/debarchito/map/issues"
+homepage: "https://sr.ht/~debarchito/mapv"
+bug-reports: "https://todo.sr.ht/~debarchito/mapv"
 depends: [
   "dune" {>= "3.24"}
   "ocaml" {>= "5.5.0"}
-  "raylib" {>= "2.2.2"}
+  "ppx_deriving" {= "6.1.3"}
+  "raylib" {= "2.2.2"}
   "odoc" {with-doc}
 ]
 build: [
@@ -26,5 +27,5 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://codeberg.org/debarchito/map.git"
+dev-repo: "git+https://git.sr.ht/~debarchito/mapv"
 x-maintenance-intent: ["(latest)"]

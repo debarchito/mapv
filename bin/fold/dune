@@ -1,6 +1,0 @@
-(executable
- (name main)
- (public_name fold)
- (package fold)
- (libraries mapv fold)
- (modules main))

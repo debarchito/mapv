@@ -1,0 +1,6 @@
+(include_subdirs qualified)
+
+(executable
+ (name main)
+ (public_name mapv)
+ (libraries mapv))

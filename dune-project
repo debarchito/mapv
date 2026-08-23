@@ -1,13 +1,13 @@
 (lang dune 3.24)
 
-(name map)
+(name mapv)
 
 (generate_opam_files true)
 
 (cram enable)
 
 (source
- (codeberg debarchito/map))
+ (sourcehut debarchito/mapv))
 
 (authors "Debarchito Nath <debarchiton@proton.me>")
 
@@ -20,20 +20,7 @@
  (depends
   (ocaml
    (>= "5.5.0"))
+  (ppx_deriving
+   (= "6.1.3"))
   (raylib
-   (>= "2.2.2"))))
-
-(package
- (name fold)
- (description "An infuriatingly elegant lisp for the Mapv VM")
- (license GPL-3.0-only)
- (depends
-  (ocaml
-   (>= "5.5.0"))
-  mapv
-  (menhir
-   (>= "20260209"))
-  (raylib
-   (>= "2.2.2"))))
-
-(using menhir 3.0)
+   (= "2.2.2"))))
