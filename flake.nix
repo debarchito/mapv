@@ -7,7 +7,7 @@
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
     };
     opam-nix = {
-      url = "github:debarchito/opam-nix";
+      url = "github:tweag/opam-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     opam-repository = {
@@ -50,7 +50,7 @@
           on = opam-nix.lib.${system};
 
           basePackagesQuery = {
-            ocaml-variants = "5.5.0+options,ocaml-option-flambda";
+            ocaml-variants = "5.5.1+options,ocaml-option-flambda";
             ocaml-config = "*";
             mapv = "*";
           };
