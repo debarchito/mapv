@@ -3,33 +3,36 @@ open Mapv.Core
 open Mapv.Asm
 open Mapv.Bytecode
 
+let outer_iters = 25
+let inner_iters = 1000
+
 let make_gc_pressure () =
   let a = Asm.create () in
   let open Instr in
-  Asm.label a "loop";
-  Asm.emit a (Load (1, 1000)) |> ignore;
-  Asm.emit a (Load (11, 0)) |> ignore;
-  Asm.emit a (Lt (3, 11, 1)) |> ignore;
-  Asm.jz a 3 "exit";
-  Asm.emit a (Alloc (4, 0, 10)) |> ignore;
-  Asm.emit a (Alloc (5, 0, 10)) |> ignore;
-  Asm.emit a (Alloc (6, 0, 10)) |> ignore;
-  Asm.emit a (Load (2, 100000)) |> ignore;
-  Asm.emit a (Alloc (12, 0, 10)) |> ignore;
-  Asm.emit a (SetField (12, 0, 2)) |> ignore;
+  (* A finite benchmark: each outer round churns through a batch of
+     short-lived objects, then allocates one object that survives into the
+     next round. This keeps both the minor and the major collector busy. *)
+  Asm.label a "outer";
+  Asm.emit a (Load (1, outer_iters)) |> ignore;
+  Asm.label a "outer_loop";
+  Asm.emit a (Load (0, 0)) |> ignore;
+  Asm.emit a (Lte (3, 1, 0)) |> ignore;
+  Asm.jnz a 3 "exit";
+  Asm.emit a (Load (2, inner_iters)) |> ignore;
+  Asm.label a "inner_loop";
+  Asm.emit a (Lte (3, 2, 0)) |> ignore;
+  Asm.jnz a 3 "inner_done";
+  Asm.emit a (Alloc (4, Tag.user, 10)) |> ignore;
+  Asm.emit a (Alloc (5, Tag.user, 10)) |> ignore;
+  Asm.emit a (Alloc (6, Tag.user, 10)) |> ignore;
   Asm.emit a (SubI (2, 2, 1)) |> ignore;
-  Asm.emit a (Lt (13, 11, 2)) |> ignore;
-  Asm.jnz a 13 "loop";
-  Asm.emit a (Alloc (10, 1, 5)) |> ignore;
+  Asm.jmp a "inner_loop";
+  Asm.label a "inner_done";
+  Asm.emit a (Alloc (10, Tag.user, 5)) |> ignore;
   Asm.emit a (SetField (10, 0, 4)) |> ignore;
   Asm.emit a (Mov (4, 10)) |> ignore;
-  Asm.emit a (Load (12, 2)) |> ignore;
-  Asm.emit a (Mod (13, 1, 12)) |> ignore;
-  Asm.emit a (Eq (13, 13, 11)) |> ignore;
-  Asm.jz a 13 "exit";
-  Asm.emit a (Alloc (14, 2, 500)) |> ignore;
   Asm.emit a (SubI (1, 1, 1)) |> ignore;
-  Asm.jmp a "loop";
+  Asm.jmp a "outer_loop";
   Asm.label a "exit";
   Asm.emit a Halt |> ignore;
   Asm.link a
@@ -40,8 +43,8 @@ let () =
   let config =
     {
       Config.default with
-      heap = { chunk_size = 128; young_limit = 256; max_chunks = 128 };
-      gc = { major_threshold = 128; major_growth_factor = 1.1 };
+      heap = { chunk_size = 1024; young_limit = 512; max_chunks = 2048 };
+      gc = { major_threshold = 512; major_growth_factor = 1.5 };
     }
   in
 

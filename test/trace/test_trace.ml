@@ -137,6 +137,44 @@ let () =
   print_endline "cross-window call depth ok"
 
 let () =
+  let open Mapv.Core.Instr in
+  let module S = Mapv.Bytecode.Serializer in
+  let code = [| Call (3, 1, 1, 2); Nop; Nop; Ret 0 |] in
+  let prog =
+    {
+      S.edition = S.edition;
+      imports = [||];
+      constants = [||];
+      funcs = [| { name = "main"; arity = 0; code } |];
+      debug = [||];
+    }
+  in
+  let decoded = S.deserialize (S.serialize prog) in
+  let expected = [| Call (16, 1, 1, 2); Nop; Nop; Ret 0 |] in
+  assert (decoded.S.funcs.(0).S.code = expected);
+  print_endline "bytecode Call round-trip ok"
+
+let () =
+  let open Mapv.Core.Instr in
+  let module S = Mapv.Bytecode.Serializer in
+  (* LoadF immediates are 8-byte aligned, so a leading LoadF is 16 bytes and
+     the jump target that follows must account for the padding. *)
+  let code = [| LoadF (0, 1.5); Nop; Jmp 2 |] in
+  let prog =
+    {
+      S.edition = S.edition;
+      imports = [||];
+      constants = [||];
+      funcs = [| { name = "main"; arity = 0; code } |];
+      debug = [||];
+    }
+  in
+  let decoded = S.deserialize (S.serialize prog) in
+  let expected = [| LoadF (0, 1.5); Nop; Jmp 20 |] in
+  assert (decoded.S.funcs.(0).S.code = expected);
+  print_endline "bytecode LoadF alignment round-trip ok"
+
+let () =
   let open Mapv.Trace.Event in
   let m = Mapv.Viz.Trace_model.create ~bucket_size:2 ~max_buckets:2 () in
   for i = 0 to 19 do

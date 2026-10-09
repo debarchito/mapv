@@ -21,23 +21,28 @@ and [direnv](https://direnv.net).
 direnv allow
 ```
 
-Once the development shell is active, the `fold` binary can either be built
-using `dune` or `Nix`. `fold` is the playground that wires the Raylib visualizer
-which gives us a low-level view into the working of the Mapv VM. You can read
-the source [here](./bin/fold/main.ml);
+Once the development shell is active, the example binaries can either be built
+using `dune` or `Nix`. They wire the Raylib visualizer which gives us a low-level
+view into the working of the Mapv VM. There are two flavours: a post-dump
+analyzer that serializes a whole run to disk, and real-time analyzers that drive
+the VM step-by-step inside the render loop.
 
 ```fish
-# build and run
+# build everything
 dune build --profile release
-./_build/install/default/bin/fold
-# or
-nix build .#fold
-./result/bin/fold
 
-# build and run in one go
-dune exec --profile release fold
-# or
-nix run .#fold
+# post-dump analyzing: builds garbage pressure, writes _gc_crush.mapvt, then
+# opens the visualizer on the dump
+./_build/install/default/bin/gc_pressure
+dune exec --profile release gc_pressure
+
+# real-time analyzing
+./_build/install/default/bin/live_no_gc          # tiny, non-allocating loop
+./_build/install/default/bin/live_gc             # allocating, GC-driven workload
+./_build/install/default/bin/live_gc_pressure    # forced GC-pressure workload
+dune exec --profile release live_no_gc
+dune exec --profile release live_gc
+dune exec --profile release live_gc_pressure
 ```
 
 The `mapv` library is available as a package that can be used as follow:
@@ -78,17 +83,23 @@ The tracer emits a single ordered event stream from both the VM and the heap
 `Mapv.Session` wires a program and a visualizer together; two modes are
 supported:
 
-- **Post-dump** (`bin/fold`): run the VM to completion while a `Recorder`
+- **Post-dump** (`bin/gc_pressure`): run the VM to completion while a `Recorder`
   captures every event, serialize to `MAPVT` v3, then open the visualizer on the
   file.
-- **Real-time** (`bin/live`): drive the VM step-by-step inside the render loop,
-  so programs that never terminate can still be inspected as they run. The
-  visualizer keeps a bounded ring window (default `200_000` events) and folds
-  evicted events into coarsely aggregated archive buckets.
+- **Real-time** (`bin/live_no_gc`, `bin/live_gc`, `bin/live_gc_pressure`): drive
+  the VM step-by-step inside the render loop, so programs that never terminate
+  can still be inspected as they run. The visualizer keeps a bounded ring window
+  (default `200_000` events) and folds evicted events into coarsely aggregated
+  archive buckets. `live_no_gc` is a minimal non-allocating loop, `live_gc`
+  builds and drops short-lived lists so the minor/major collectors run
+  continuously, and `live_gc_pressure` is the same forced GC-pressure workload
+  as `gc_pressure` but streamed live instead of dumped.
 
 ```fish
-dune exec --profile release fold   # post-dump analyzing
-dune exec --profile release live   # real-time analyzing
+dune exec --profile release gc_pressure        # post-dump analyzing
+dune exec --profile release live_no_gc         # real-time, no allocation
+dune exec --profile release live_gc            # real-time, GC pressure
+dune exec --profile release live_gc_pressure   # real-time, forced GC pressure
 ```
 
 Wiring a session manually:

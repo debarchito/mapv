@@ -342,9 +342,20 @@ module Make (H : TRACER) : S with type tracer_ctx = H.ctx = struct
         (Exception.Panic
            (Exception.Alloc_error
               (Format.asprintf "alloc: size %d exceeds chunk_size" size)));
-    let yc = t.chunks.(t.young) in
-    if yc.top + needed > yc.size then t.young <- add_chunk t Young;
-    let yc = t.chunks.(t.young) in
+    let rec pick i =
+      if i >= t.n_chunks then begin
+        t.young <- add_chunk t Young;
+        t.chunks.(t.young)
+      end
+      else
+        let c = t.chunks.(i) in
+        if c.gen = Young && c.top + needed <= c.size then begin
+          t.young <- i;
+          c
+        end
+        else pick (i + 1)
+    in
+    let yc = pick t.young in
     let addr = (t.young * t.chunk_size) + yc.top + header_words in
     set_header t addr ~tag ~size ~mark:false;
     yc.top <- yc.top + needed;
@@ -486,9 +497,14 @@ module Make (H : TRACER) : S with type tracer_ctx = H.ctx = struct
   let needs_minor_gc t = t.alloc_count >= t.young_limit
 
   let reset_young t =
-    let c = t.chunks.(t.young) in
-    c.top <- 0;
-    Array.fill c.data 0 c.size Value.Nil;
+    for i = 0 to t.n_chunks - 1 do
+      let c = t.chunks.(i) in
+      if c.gen = Young then begin
+        c.top <- 0;
+        Array.fill c.data 0 c.size Value.Nil
+      end
+    done;
+    t.young <- 0;
     t.alloc_count <- 0
 
   let chunk_size t = t.chunk_size

@@ -58,7 +58,7 @@ module Make (H : Mapv.Heap.S) = struct
              (Exception.Type_error "std/string: expected string Ptr"))
 
   let register heap (reg : Mapv.Symbol.registry) =
-    let nif, _, type_err = NS.ns_builder () in
+    let nif, nif_, type_err = NS.ns_builder () in
     let str = of_ocaml heap in
     let estr = expect_str heap in
     NS.register heap reg
@@ -219,7 +219,7 @@ module Make (H : Mapv.Heap.S) = struct
                  in
                  str (String.concat sep parts)
              | _ -> type_err "join" "Ptr, Ptr");
-           nif "format" 1 (fun args ->
+           nif_ "format" (fun args ->
                if Array.length args < 1 then type_err "format" "fmt + args";
                let fmt_s = estr args.(0) in
                let nargs = Array.length args - 1 in

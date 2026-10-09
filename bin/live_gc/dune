@@ -1,6 +1,6 @@
 (executable
  (name main)
- (public_name fold)
+ (public_name live_gc)
  (package fold)
  (libraries mapv fold)
  (modules main))

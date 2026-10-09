@@ -27,7 +27,13 @@ let () =
   let program = make_program () in
   let flat, offsets =
     Loader.link
-      [| { Serializer.name = "live"; arity = 0; code = program.Asm.program } |]
+      [|
+        {
+          Serializer.name = "live_no_gc";
+          arity = 0;
+          code = program.Asm.program;
+        };
+      |]
   in
   let entry = Loader.func_slice flat offsets 0 in
   let session =

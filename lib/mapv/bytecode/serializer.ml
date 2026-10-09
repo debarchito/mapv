@@ -129,8 +129,8 @@ module Write = struct
     | Instr.GetTag _ | Instr.Len _ -> 4
     | Instr.Jmp _ -> 8
     | Instr.Jz _ | Instr.Jnz _ -> 8
-    | Instr.Call _ -> 12
-    | Instr.TailCall _ -> 12
+    | Instr.Call _ -> 8
+    | Instr.TailCall _ -> 8
     | Instr.DynCall _ -> 8
     | Instr.TailDynCall _ -> 4
     | Instr.Ret _ -> 4
@@ -145,7 +145,16 @@ module Write = struct
     let pos = ref 0 in
     for i = 0 to Array.length code - 1 do
       offsets.(i) <- !pos;
-      pos := !pos + instr_size code.(i)
+      let size =
+        match code.(i) with
+        | Instr.LoadF _ ->
+            (* float immediates are 8-byte aligned, so a LoadF occupies 12 or
+               16 bytes depending on its position in the stream *)
+            let aligned = (!pos + 4 + 7) land lnot 7 in
+            aligned + 8 - !pos
+        | i -> instr_size i
+      in
+      pos := !pos + size
     done;
     offsets
 
