@@ -2,7 +2,7 @@ open Core
 
 type gen = Young | Old
 
-type event =
+type event = Trace.Event.gc =
   | Minor_start
   | Minor_end of { promoted : int }
   | Major_mark of { steps : int }
@@ -52,13 +52,10 @@ module No_tracing = struct
 end
 
 module Tracing = struct
+  module Ev = Trace.Event
+
   type ctx = {
-    mutable allocs : (int * int * int * int) list;
-    mutable frees : (int * int) list;
-    mutable promotes : (int * int) list;
-    mutable events : (int * event) list;
-    mutable reads : (int * int * int) list;
-    mutable writes : (int * int * int * Value.t) list;
+    mutable bus : Trace.Bus.t option;
     metadata : bytes;
     chunk_size : int;
     sample_rate : int;
@@ -67,35 +64,33 @@ module Tracing = struct
 
   let make ~max_chunks ~chunk_size ~sample_rate =
     {
-      allocs = [];
-      frees = [];
-      promotes = [];
-      events = [];
-      reads = [];
-      writes = [];
+      bus = None;
       metadata = Bytes.make (max_chunks * chunk_size) '\000';
       chunk_size;
       sample_rate;
       tick = 0;
     }
 
-  let on_alloc ctx ~addr ~size ~tag =
-    ctx.allocs <- (ctx.tick, addr, size, tag) :: ctx.allocs
+  let set_bus ctx bus = ctx.bus <- Some bus
 
-  let on_free ctx ~addr = ctx.frees <- (ctx.tick, addr) :: ctx.frees
-  let on_promote ctx ~addr = ctx.promotes <- (ctx.tick, addr) :: ctx.promotes
-  let on_gc ctx ev = ctx.events <- (ctx.tick, ev) :: ctx.events
+  let publish ctx kind =
+    match ctx.bus with Some b -> Trace.Bus.publish b kind | None -> ()
+
+  let on_alloc ctx ~addr ~size ~tag = publish ctx (Ev.Alloc { addr; size; tag })
+  let on_free ctx ~addr = publish ctx (Ev.Free { addr })
+  let on_promote ctx ~addr = publish ctx (Ev.Promote { addr })
+  let on_gc ctx ev = publish ctx (Ev.Gc { event = ev })
 
   let on_read ctx ~addr ~field v =
     ctx.tick <- ctx.tick + 1;
     if ctx.tick mod ctx.sample_rate = 0 then
-      ctx.reads <- (ctx.tick, addr, field) :: ctx.reads;
+      publish ctx (Ev.Read { addr; field });
     ignore v
 
   let on_write ctx ~addr ~field v =
     ctx.tick <- ctx.tick + 1;
     if ctx.tick mod ctx.sample_rate = 0 then begin
-      ctx.writes <- (ctx.tick, addr, field, v) :: ctx.writes;
+      publish ctx (Ev.Write { addr; field; value = v });
       let slot = addr + field in
       if slot < Bytes.length ctx.metadata then
         Bytes.set ctx.metadata slot

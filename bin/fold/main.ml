@@ -59,18 +59,15 @@ let () =
   let entry = Loader.func_slice flat offsets 0 in
   Printf.printf "GC pressure bytecode: %d bytes\n%!" (Bytes.length entry);
 
+  let session =
+    Session.create (Session.Post_dump { path = "_gc_crush.mapvt" })
+  in
   let heap_ctx =
     Heap.Tracing.make ~max_chunks:config.heap.max_chunks
       ~chunk_size:config.heap.chunk_size ~sample_rate:1
   in
   let vm_ctx = Vm.Tracing.make () in
+  Heap.Tracing.set_bus heap_ctx (Session.bus session);
+  Vm.Tracing.set_bus vm_ctx (Session.bus session);
   let vm = VM.create config entry heap_ctx vm_ctx in
-
-  (match VM.run vm with
-  | () -> ()
-  | exception e ->
-      Printf.printf "VM Panic: %s\n" (Printexc.to_string e);
-      exit 1);
-
-  Trace.Serializer.serialize_to_file "_gc_crush.mapvt" vm_ctx heap_ctx;
-  Viz.Renderer.run "_gc_crush.mapvt"
+  Session.run session (module VM) vm

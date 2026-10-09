@@ -1,10 +1,14 @@
 open Core
 
 let magic = "MAPVT"
-let version = 2
+let version = 3
+let version_legacy = 2
+let sec_events = 0x00
 let sec_vm = 0x00
 let sec_heap = 0x01
 let sec_gc = 0x02
+
+module Ev = Event
 
 module Write = struct
   let u8 buf v = Buffer.add_uint8 buf v
@@ -30,149 +34,82 @@ module Write = struct
     | Value.NativePtr _ -> u8 buf 6
 
   let gc_event buf = function
-    | Heap.Minor_start -> u8 buf 0
-    | Heap.Minor_end { promoted } ->
+    | Event.Minor_start -> u8 buf 0
+    | Event.Minor_end { promoted } ->
         u8 buf 1;
         u32 buf promoted
-    | Heap.Major_mark { steps } ->
+    | Event.Major_mark { steps } ->
         u8 buf 2;
         u32 buf steps
-    | Heap.Major_sweep { steps; freed } ->
+    | Event.Major_sweep { steps; freed } ->
         u8 buf 3;
         u32 buf steps;
         u32 buf freed
-    | Heap.Major_end -> u8 buf 4
+    | Event.Major_end -> u8 buf 4
 
-  let vm_section (ctx : Vm.Tracing.ctx) =
-    let buf = Buffer.create 1024 in
-    let instrs = List.rev ctx.instrs in
-    let calls = List.rev ctx.calls in
-    let rets = List.rev ctx.rets in
-    let throws = List.rev ctx.throws in
-    let con_news = List.rev ctx.con_news in
-    let con_yields = List.rev ctx.con_yields in
-    let con_resumes = List.rev ctx.con_resumes in
-    let reg_writes = List.rev ctx.reg_writes in
-    u32 buf (List.length instrs);
-    List.iter
-      (fun (tick, pc, op) ->
-        u32 buf tick;
-        u32 buf pc;
-        u8 buf op;
+  let event buf (ev : Ev.t) =
+    u32 buf ev.seq;
+    match ev.kind with
+    | Ev.Instr { pc; op } ->
         u8 buf 0;
-        u16 buf 0)
-      instrs;
-    u32 buf (List.length calls);
-    List.iter
-      (fun (tick, pc, target) ->
-        u32 buf tick;
         u32 buf pc;
-        u32 buf target)
-      calls;
-    u32 buf (List.length rets);
-    List.iter
-      (fun (tick, pc) ->
-        u32 buf tick;
-        u32 buf pc)
-      rets;
-    u32 buf (List.length throws);
-    List.iter
-      (fun (tick, pc) ->
-        u32 buf tick;
-        u32 buf pc)
-      throws;
-    u32 buf (List.length con_news);
-    List.iter
-      (fun (tick, pc) ->
-        u32 buf tick;
-        u32 buf pc)
-      con_news;
-    u32 buf (List.length con_yields);
-    List.iter
-      (fun (tick, con_id, pc) ->
-        u32 buf tick;
+        u8 buf op
+    | Ev.Call { pc; target } ->
+        u8 buf 1;
+        u32 buf pc;
+        u32 buf target
+    | Ev.Ret { pc } ->
+        u8 buf 2;
+        u32 buf pc
+    | Ev.Throw { pc } ->
+        u8 buf 3;
+        u32 buf pc
+    | Ev.Con_new { pc; con_id = _ } ->
+        u8 buf 4;
+        u32 buf pc
+    | Ev.Con_yield { con_id; pc } ->
+        u8 buf 5;
         u32 buf con_id;
-        u32 buf pc)
-      con_yields;
-    u32 buf (List.length con_resumes);
-    List.iter
-      (fun (tick, con_id, pc) ->
-        u32 buf tick;
+        u32 buf pc
+    | Ev.Con_resume { con_id; pc } ->
+        u8 buf 6;
         u32 buf con_id;
-        u32 buf pc)
-      con_resumes;
-    u32 buf (List.length reg_writes);
-    List.iter
-      (fun (tick, reg, v) ->
-        u32 buf tick;
+        u32 buf pc
+    | Ev.Reg_write { reg; value = v } ->
+        u8 buf 7;
         u32 buf reg;
-        value buf v)
-      reg_writes;
-    buf
-
-  let heap_section (ctx : Heap.Tracing.ctx) =
-    let buf = Buffer.create 1024 in
-    let allocs = List.rev ctx.allocs in
-    let frees = List.rev ctx.frees in
-    let promotes = List.rev ctx.promotes in
-    let reads = List.rev ctx.reads in
-    let writes = List.rev ctx.writes in
-    u32 buf (List.length allocs);
-    List.iter
-      (fun (tick, addr, size, tag) ->
-        u32 buf tick;
+        value buf v
+    | Ev.Alloc { addr; size; tag } ->
+        u8 buf 8;
         u32 buf addr;
         u32 buf size;
-        u32 buf tag)
-      allocs;
-    u32 buf (List.length frees);
-    List.iter
-      (fun (tick, addr) ->
-        u32 buf tick;
-        u32 buf addr)
-      frees;
-    u32 buf (List.length promotes);
-    List.iter
-      (fun (tick, addr) ->
-        u32 buf tick;
-        u32 buf addr)
-      promotes;
-    u32 buf (List.length reads);
-    List.iter
-      (fun (tick, addr, field) ->
-        u32 buf tick;
+        u32 buf tag
+    | Ev.Free { addr } ->
+        u8 buf 9;
+        u32 buf addr
+    | Ev.Promote { addr } ->
+        u8 buf 10;
+        u32 buf addr
+    | Ev.Read { addr; field } ->
+        u8 buf 11;
         u32 buf addr;
-        u32 buf field)
-      reads;
-    u32 buf (List.length writes);
-    List.iter
-      (fun (tick, addr, field, v) ->
-        u32 buf tick;
+        u32 buf field
+    | Ev.Write { addr; field; value = v } ->
+        u8 buf 12;
         u32 buf addr;
         u32 buf field;
-        value buf v)
-      writes;
-    buf
+        value buf v
+    | Ev.Gc { event = ev } ->
+        u8 buf 13;
+        gc_event buf ev
 
-  let gc_section (ctx : Heap.Tracing.ctx) =
-    let buf = Buffer.create 256 in
-    let events = List.rev ctx.events in
+  let events_section events =
+    let buf = Buffer.create 4096 in
     u32 buf (List.length events);
-    List.iter
-      (fun (tick, ev) ->
-        u32 buf tick;
-        gc_event buf ev)
-      events;
+    List.iter (event buf) events;
     buf
 
-  let program vm_ctx heap_ctx =
-    let secs =
-      [|
-        (sec_vm, vm_section vm_ctx);
-        (sec_heap, heap_section heap_ctx);
-        (sec_gc, gc_section heap_ctx);
-      |]
-    in
+  let container secs =
     let n_secs = Array.length secs in
     let header_size = 5 + 2 + 1 in
     let table_size = 4 + (n_secs * 12) in
@@ -208,6 +145,8 @@ module Write = struct
       secs;
     ignore offsets;
     out
+
+  let program events = container [| (sec_events, events_section events) |]
 end
 
 module Read = struct
@@ -266,8 +205,116 @@ module Read = struct
     writes : (int * int * int * Value.t) array;
   }
 
-  type gc_trace = { events : (int * Heap.event) array }
-  type t = { vm : vm_trace; heap : heap_trace; gc : gc_trace }
+  type gc_trace = { events : (int * Event.gc) array }
+  type t = { vm : vm_trace; heap : heap_trace; gc : gc_trace; head : int }
+
+  let gc_event cur =
+    match u8 cur with
+    | 0 -> Event.Minor_start
+    | 1 -> Event.Minor_end { promoted = u32 cur }
+    | 2 -> Event.Major_mark { steps = u32 cur }
+    | 3 ->
+        let steps = u32 cur in
+        let freed = u32 cur in
+        Event.Major_sweep { steps; freed }
+    | 4 -> Event.Major_end
+    | _ -> Event.Major_end
+
+  (* ---- v3: single event stream ---- *)
+
+  let events_section cur =
+    let n = u32 cur in
+    let instrs = ref [] in
+    let calls = ref [] in
+    let rets = ref [] in
+    let throws = ref [] in
+    let con_news = ref [] in
+    let con_yields = ref [] in
+    let con_resumes = ref [] in
+    let reg_writes = ref [] in
+    let allocs = ref [] in
+    let frees = ref [] in
+    let promotes = ref [] in
+    let reads = ref [] in
+    let writes = ref [] in
+    let events = ref [] in
+    let head = ref (-1) in
+    for _ = 1 to n do
+      let seq = u32 cur in
+      if seq > !head then head := seq;
+      match u8 cur with
+      | 0 ->
+          let pc = u32 cur in
+          let op = u8 cur in
+          instrs := (seq, pc, op) :: !instrs
+      | 1 ->
+          let pc = u32 cur in
+          let target = u32 cur in
+          calls := (seq, pc, target) :: !calls
+      | 2 -> rets := (seq, u32 cur) :: !rets
+      | 3 -> throws := (seq, u32 cur) :: !throws
+      | 4 -> con_news := (seq, u32 cur) :: !con_news
+      | 5 ->
+          let con_id = u32 cur in
+          let pc = u32 cur in
+          con_yields := (seq, con_id, pc) :: !con_yields
+      | 6 ->
+          let con_id = u32 cur in
+          let pc = u32 cur in
+          con_resumes := (seq, con_id, pc) :: !con_resumes
+      | 7 ->
+          let reg = u32 cur in
+          let v = value cur in
+          reg_writes := (seq, reg, v) :: !reg_writes
+      | 8 ->
+          let addr = u32 cur in
+          let size = u32 cur in
+          let tag = u32 cur in
+          allocs := (seq, addr, size, tag) :: !allocs
+      | 9 -> frees := (seq, u32 cur) :: !frees
+      | 10 -> promotes := (seq, u32 cur) :: !promotes
+      | 11 ->
+          let addr = u32 cur in
+          let field = u32 cur in
+          reads := (seq, addr, field) :: !reads
+      | 12 ->
+          let addr = u32 cur in
+          let field = u32 cur in
+          let v = value cur in
+          writes := (seq, addr, field, v) :: !writes
+      | 13 -> events := (seq, gc_event cur) :: !events
+      | tag ->
+          raise
+            (Exception.Panic
+               (Exception.Alloc_error
+                  (Format.asprintf "trace: unknown event tag %d" tag)))
+    done;
+    let arr l = Array.of_list (List.rev l) in
+    let vm =
+      {
+        instrs = arr !instrs;
+        calls = arr !calls;
+        rets = arr !rets;
+        throws = arr !throws;
+        con_news = arr !con_news;
+        con_yields = arr !con_yields;
+        con_resumes = arr !con_resumes;
+        reg_writes = arr !reg_writes;
+      }
+    in
+    let heap =
+      {
+        allocs = arr !allocs;
+        frees = arr !frees;
+        promotes = arr !promotes;
+        reads = arr !reads;
+        writes = arr !writes;
+      }
+    in
+    let gc = { events = arr !events } in
+    { vm; heap; gc; head = !head }
+
+  (* ---- v2: legacy multi-section ---- *)
 
   let vm_section cur =
     let n_instrs = u32 cur in
@@ -386,18 +433,6 @@ module Read = struct
     in
     { allocs; frees; promotes; reads; writes }
 
-  let gc_event cur =
-    match u8 cur with
-    | 0 -> Heap.Minor_start
-    | 1 -> Heap.Minor_end { promoted = u32 cur }
-    | 2 -> Heap.Major_mark { steps = u32 cur }
-    | 3 ->
-        let steps = u32 cur in
-        let freed = u32 cur in
-        Heap.Major_sweep { steps; freed }
-    | 4 -> Heap.Major_end
-    | _ -> Heap.Major_end
-
   let gc_section cur =
     let n = u32 cur in
     let events =
@@ -408,6 +443,56 @@ module Read = struct
     in
     { events }
 
+  let read_table cur =
+    let n_sec = u32 cur in
+    Array.init n_sec (fun _ ->
+        let id = u32 cur in
+        let off = u32 cur in
+        let sz = u32 cur in
+        (id, off, sz))
+
+  let find_sec secs id =
+    List.find_map
+      (fun (i, o, _) -> if i = id then Some o else None)
+      (Array.to_list secs)
+
+  let require secs id name =
+    match find_sec secs id with
+    | Some o -> o
+    | None ->
+        raise
+          (Exception.Panic
+             (Exception.Alloc_error
+                (Format.asprintf "trace: missing section '%s'" name)))
+
+  let load_legacy cur secs =
+    let vm_off = require secs sec_vm "vm" in
+    seek cur vm_off;
+    let vm = vm_section cur in
+    let heap_off = require secs sec_heap "heap" in
+    seek cur heap_off;
+    let heap = heap_section cur in
+    let gc_off = require secs sec_gc "gc" in
+    seek cur gc_off;
+    let gc = gc_section cur in
+    let head = ref (-1) in
+    let bump t = if t > !head then head := t in
+    Array.iter (fun (t, _, _) -> bump t) vm.instrs;
+    Array.iter (fun (t, _, _) -> bump t) vm.calls;
+    Array.iter (fun (t, _) -> bump t) vm.rets;
+    Array.iter (fun (t, _) -> bump t) vm.throws;
+    Array.iter (fun (t, _) -> bump t) vm.con_news;
+    Array.iter (fun (t, _, _) -> bump t) vm.con_yields;
+    Array.iter (fun (t, _, _) -> bump t) vm.con_resumes;
+    Array.iter (fun (t, _, _) -> bump t) vm.reg_writes;
+    Array.iter (fun (t, _, _, _) -> bump t) heap.allocs;
+    Array.iter (fun (t, _) -> bump t) heap.frees;
+    Array.iter (fun (t, _) -> bump t) heap.promotes;
+    Array.iter (fun (t, _, _) -> bump t) heap.reads;
+    Array.iter (fun (t, _, _, _) -> bump t) heap.writes;
+    Array.iter (fun (t, _) -> bump t) gc.events;
+    { vm; heap; gc; head = !head }
+
   let load cur =
     let m = Bytes.sub_string cur.data cur.pos 5 in
     if m <> magic then
@@ -416,52 +501,29 @@ module Read = struct
            (Exception.Alloc_error (Format.asprintf "trace: invalid magic %S" m)));
     cur.pos <- 5;
     let ver = u16 cur in
-    if ver <> version then
-      raise
-        (Exception.Panic
-           (Exception.Alloc_error
-              (Format.asprintf "trace: unknown version %d" ver)));
     cur.pos <- 8;
-    let n_sec = u32 cur in
-    let secs =
-      Array.init n_sec (fun _ ->
-          let id = u32 cur in
-          let off = u32 cur in
-          let sz = u32 cur in
-          (id, off, sz))
-    in
-    let get_sec id =
-      List.find_map
-        (fun (i, o, _) -> if i = id then Some o else None)
-        (Array.to_list secs)
-    in
-    let require id name =
-      match get_sec id with
-      | Some o -> o
-      | None ->
-          raise
-            (Exception.Panic
-               (Exception.Alloc_error
-                  (Format.asprintf "trace: missing section '%s'" name)))
-    in
-    let vm_off = require sec_vm "vm" in
-    seek cur vm_off;
-    let vm = vm_section cur in
-    let heap_off = require sec_heap "heap" in
-    seek cur heap_off;
-    let heap = heap_section cur in
-    let gc_off = require sec_gc "gc" in
-    seek cur gc_off;
-    let gc = gc_section cur in
-    { vm; heap; gc }
+    let secs = read_table cur in
+    match ver with
+    | v when v = version_legacy -> load_legacy cur secs
+    | v when v = version ->
+        let off = require secs sec_events "events" in
+        seek cur off;
+        events_section cur
+    | _ ->
+        raise
+          (Exception.Panic
+             (Exception.Alloc_error
+                (Format.asprintf "trace: unknown version %d" ver)))
 end
 
-let serialize vm_ctx heap_ctx =
-  let buf = Write.program vm_ctx heap_ctx in
+let serialize_events events =
+  let buf = Write.program events in
   Buffer.to_bytes buf
 
-let serialize_to_file path vm_ctx heap_ctx =
-  let b = serialize vm_ctx heap_ctx in
+let serialize recorder = serialize_events (Recorder.stream recorder)
+
+let serialize_to_file path recorder =
+  let b = serialize recorder in
   let oc = open_out_bin path in
   Fun.protect ~finally:(fun () -> close_out oc) (fun () -> output_bytes oc b)
 

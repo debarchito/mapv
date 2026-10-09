@@ -71,7 +71,41 @@ buildInputs = [
 > `direnv reload` and they'll be made available for all subsequent `dune build`
 > and `nix build`/`nix run` invocations.
 
-## 2. Formatting
+## 2. Tracing & visualization
+
+The tracer emits a single ordered event stream from both the VM and the heap
+(`Mapv.Trace.Event`) over a synchronous pubsub bus (`Mapv.Trace.Bus`). A
+`Mapv.Session` wires a program and a visualizer together; two modes are
+supported:
+
+- **Post-dump** (`bin/fold`): run the VM to completion while a `Recorder`
+  captures every event, serialize to `MAPVT` v3, then open the visualizer on the
+  file.
+- **Real-time** (`bin/live`): drive the VM step-by-step inside the render loop,
+  so programs that never terminate can still be inspected as they run. The
+  visualizer keeps a bounded ring window (default `200_000` events) and folds
+  evicted events into coarsely aggregated archive buckets.
+
+```fish
+dune exec --profile release fold   # post-dump analyzing
+dune exec --profile release live   # real-time analyzing
+```
+
+Wiring a session manually:
+
+```ocaml
+let session = Session.create (Session.Live { window = 200_000; bucket_size = 1000 }) in
+Heap.Tracing.set_bus heap_ctx (Session.bus session);
+Vm.Tracing.set_bus   vm_ctx   (Session.bus session);
+let vm = VM.create config entry heap_ctx vm_ctx in
+Session.run session (module VM) vm
+```
+
+Tracing can be turned off entirely at zero cost by using the `No_tracing`
+functors (`Heap.No_tracing`, `Vm.No_tracing`) and plain `VM.run`. Old `MAPVT`
+v2 dumps are still readable.
+
+## 3. Formatting
 
 ```fish
 nix fmt
@@ -81,7 +115,7 @@ nix run .#fmt
 fd -e ml -e mli --exclude _build | xargs ocamlformat --inplace
 ```
 
-## 3. Licensing
+## 4. Licensing
 
 `mapv` is licensed under [GNU LGPLv3](/LICENSE-LGPLv3) only while `fold` is
 licensed under [GNU GPLv3](/LICENSE-GPLv3) only.

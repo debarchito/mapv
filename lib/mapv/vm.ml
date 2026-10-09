@@ -56,55 +56,30 @@ module No_tracing = struct
 end
 
 module Tracing = struct
-  type ctx = {
-    mutable instrs : (int * int * int) list;
-    mutable calls : (int * int * int) list;
-    mutable rets : (int * int) list;
-    mutable throws : (int * int) list;
-    mutable con_news : (int * int) list;
-    mutable con_yields : (int * int * int) list;
-    mutable con_resumes : (int * int * int) list;
-    mutable con_count : int;
-    mutable tick : int;
-    mutable reg_writes : (int * int * Value.t) list;
-  }
+  module Ev = Trace.Event
 
-  let make () =
-    {
-      instrs = [];
-      calls = [];
-      rets = [];
-      throws = [];
-      con_news = [];
-      con_yields = [];
-      con_resumes = [];
-      con_count = 0;
-      tick = 0;
-      reg_writes = [];
-    }
+  type ctx = { mutable bus : Trace.Bus.t option; mutable con_count : int }
 
-  let on_instr ctx ~pc ~op =
-    ctx.instrs <- (ctx.tick, pc, op) :: ctx.instrs;
-    ctx.tick <- ctx.tick + 1
+  let make () = { bus = None; con_count = 0 }
+  let set_bus ctx bus = ctx.bus <- Some bus
 
-  let on_call ctx ~pc ~target = ctx.calls <- (ctx.tick, pc, target) :: ctx.calls
-  let on_ret ctx ~pc = ctx.rets <- (ctx.tick, pc) :: ctx.rets
-  let on_throw ctx ~pc = ctx.throws <- (ctx.tick, pc) :: ctx.throws
+  let publish ctx kind =
+    match ctx.bus with Some b -> Trace.Bus.publish b kind | None -> ()
+
+  let on_instr ctx ~pc ~op = publish ctx (Ev.Instr { pc; op })
+  let on_call ctx ~pc ~target = publish ctx (Ev.Call { pc; target })
+  let on_ret ctx ~pc = publish ctx (Ev.Ret { pc })
+  let on_throw ctx ~pc = publish ctx (Ev.Throw { pc })
 
   let on_con_new ctx ~pc =
     let id = ctx.con_count in
-    ctx.con_news <- (ctx.tick, pc) :: ctx.con_news;
+    publish ctx (Ev.Con_new { pc; con_id = id });
     ctx.con_count <- ctx.con_count + 1;
     id
 
-  let on_con_yield ctx ~con_id ~pc =
-    ctx.con_yields <- (ctx.tick, con_id, pc) :: ctx.con_yields
-
-  let on_con_resume ctx ~con_id ~pc =
-    ctx.con_resumes <- (ctx.tick, con_id, pc) :: ctx.con_resumes
-
-  let on_reg_write ctx ~reg ~value =
-    ctx.reg_writes <- (ctx.tick, reg, value) :: ctx.reg_writes
+  let on_con_yield ctx ~con_id ~pc = publish ctx (Ev.Con_yield { con_id; pc })
+  let on_con_resume ctx ~con_id ~pc = publish ctx (Ev.Con_resume { con_id; pc })
+  let on_reg_write ctx ~reg ~value = publish ctx (Ev.Reg_write { reg; value })
 end
 
 module type S = sig
