@@ -9,9 +9,6 @@ let inner_iters = 1000
 let make_gc_pressure () =
   let a = Asm.create () in
   let open Instr in
-  (* A finite benchmark: each outer round churns through a batch of
-     short-lived objects, then allocates one object that survives into the
-     next round. This keeps both the minor and the major collector busy. *)
   Asm.label a "outer";
   Asm.emit a (Load (1, outer_iters)) |> ignore;
   Asm.label a "outer_loop";

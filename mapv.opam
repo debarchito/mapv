@@ -10,6 +10,7 @@ depends: [
   "dune" {>= "3.24"}
   "ocaml" {>= "5.5.0"}
   "raylib" {>= "2.2.2"}
+  "vg" {>= "0.9.5"}
   "odoc" {with-doc}
 ]
 build: [

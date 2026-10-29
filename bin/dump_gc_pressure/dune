@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (public_name dump_gc_pressure)
+ (package fold)
+ (libraries mapv fold)
+ (modules main))

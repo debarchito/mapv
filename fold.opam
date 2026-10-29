@@ -12,6 +12,7 @@ depends: [
   "mapv"
   "menhir" {>= "20260209"}
   "raylib" {>= "2.2.2"}
+  "vg" {>= "0.9.5"}
   "odoc" {with-doc}
 ]
 build: [

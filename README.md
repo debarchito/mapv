@@ -116,7 +116,63 @@ Tracing can be turned off entirely at zero cost by using the `No_tracing`
 functors (`Heap.No_tracing`, `Vm.No_tracing`) and plain `VM.run`. Old `MAPVT`
 v2 dumps are still readable.
 
-## 3. Formatting
+## 3. Tracing overhead metrics
+
+`bin/metrics` is a headless benchmark for the post-dump path. It never starts the
+visualizer. It runs two bytecode workloads with tracing off, with tracing on
+(`Tracing` + `Recorder` + `MAPVT` serialize), and with a counting tracer that
+publishes nothing, then writes raw CSV dumps for external analysis:
+
+- `no_gc`: a pure register loop (`AddI`, `SubI`, `Jnz`) that never touches the
+  Mapv heap.
+- `gc_pressure`: the same forced allocation pattern as `bin/gc_pressure`
+  (25 × 1000 inner iterations, three allocations each, plus one written object
+  per outer iteration), so it exercises minor GC, promotion, major GC, and
+  write barriers.
+
+```fish
+dune build --profile release bin/metrics/main.exe
+./_build/default/bin/metrics/main.exe
+# or with knobs:
+./_build/default/bin/metrics/main.exe \
+  --out-dir metrics --reps 5 --warmup 1 \
+  --no-gc-iters 250000 --outer 25 --inner 1000 --alloc-size 10 \
+  --sample-rates 1,2,4,8 --keep-traces
+```
+
+Every measured run executes in a forked child so the parent's heap, the OCaml
+GC, and the process RSS baseline are not polluted by earlier runs. The four
+dumps are:
+
+- `metrics_runs.csv`: one wide row per run. Timing (`setup_ns`, `exec_wall_ns`,
+  serialization, total), memory (`rss_*`, OCaml `gc_*`, Mapv `mapv_*`), trace
+  integrity (`seq_gaps`, `seq_duplicates`, `roundtrip_ok`), traced event counts
+  (`ev_*`), and the matching ground-truth counts (`actual_*`) all live here.
+- `metrics_fidelity.csv`: one row per workload × sample rate × event kind. For
+  ordinary kinds `expected_ops == actual_ops`; for `read`/`write` the expected
+  count is the exact number that the shared heap tick publishes at that sample
+  rate. `capture_ratio = traced/actual`, `expected_ratio = expected/actual`,
+  and `fidelity_ratio = traced/expected`.
+- `metrics_actual.csv`: ground-truth operation counts from the counting tracer,
+  plus the count run's execution time and peak memory.
+- `metrics_summary.csv`: mean/median/std/min/max/n for every numeric run column,
+  grouped by phase, workload, tracing mode, and sample rate.
+
+`heap_*`, `gc_*`, and `rss_*` describe the harness process. `mapv_*` describes
+the Mapv heap, while `ev_gc_*` and `actual_gc_*` describe the Mapv collector;
+`mapv_gc_minor_ns` and `mapv_gc_major_ns` are the wall-clock time spent in
+minor and major collections, and `mapv_gc_{minor,major}_count` are the number
+of completed collections. GC timing uses the collector's event boundaries:
+minor runs from `Minor_start` to `Minor_end`, and major runs from the preceding
+`Minor_end` through `Major_end`, so major mark and sweep are included. The
+`ev_*` counts come from the serialized trace,
+and `actual_*` from a separate `Heap.No_tracing`/`Vm.No_tracing` run that still
+invokes the tracer hooks. The `read`/`write` sampling is exact: a single tick is
+shared by both, incrementing on every access, and an event is published when
+`tick mod sample_rate == 0`. Thus `sample_rate` only attenuates reads and
+writes, not instructions, allocations, or GC events.
+
+## 4. Formatting
 
 ```fish
 nix fmt
@@ -126,7 +182,7 @@ nix run .#fmt
 fd -e ml -e mli --exclude _build | xargs ocamlformat --inplace
 ```
 
-## 4. Licensing
+## 5. Licensing
 
 `mapv` is licensed under [GNU LGPLv3](/LICENSE-LGPLv3) only while `fold` is
 licensed under [GNU GPLv3](/LICENSE-GPLv3) only.

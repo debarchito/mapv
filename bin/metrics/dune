@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (public_name metrics)
+ (package fold)
+ (libraries mapv unix)
+ (modules workload csv measure main))
